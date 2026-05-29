@@ -8,6 +8,9 @@ from openai import OpenAI
 
 from config import get_settings
 
+# Each item: {"role": "user"|"assistant", "content": str}
+Message = dict[str, str]
+
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent / "system_prompt.txt"
@@ -121,11 +124,27 @@ def strip_markdown_bold(text: str) -> str:
     return text.replace("**", "")
 
 
-def ask(user_input: str, *, chat_id: int | None = None) -> str:
-    """Send a question to the RAG model and return the answer text."""
+def ask(
+    user_input: str,
+    *,
+    history: list[Message] | None = None,
+    chat_id: int | None = None,
+) -> str:
+    """Send a question to the RAG model and return the answer text.
+
+    Pass `history` for multi-turn dialogue within a session. The list must include
+    the latest user message.
+    """
     settings = get_settings()
     store_id = ensure_vector_store()
     client = _get_client()
+
+    if history is not None:
+        api_input: list[Message] = history
+        history_len = len(history)
+    else:
+        api_input = [{"role": "user", "content": user_input}]
+        history_len = 1
 
     started = time.perf_counter()
     try:
@@ -133,14 +152,18 @@ def ask(user_input: str, *, chat_id: int | None = None) -> str:
             model=settings.yandex_model,
             instructions=_get_instructions(),
             tools=[{"type": "retrieval", "vector_store_id": store_id}],
-            input=[{"role": "user", "content": user_input}],
+            input=api_input,
             temperature=0.4,
             max_output_tokens=1000,
         )
     except Exception:
         logger.exception(
             "yandex api request failed",
-            extra={"event": "rag_request_failed", "chat_id": chat_id},
+            extra={
+                "event": "rag_request_failed",
+                "chat_id": chat_id,
+                "history_messages": history_len,
+            },
         )
         raise
 
@@ -150,6 +173,7 @@ def ask(user_input: str, *, chat_id: int | None = None) -> str:
         extra={
             "event": "rag_request_ok",
             "chat_id": chat_id,
+            "history_messages": history_len,
             "duration_ms": duration_ms,
             "response_id": response.id,
         },

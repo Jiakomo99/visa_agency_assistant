@@ -5,6 +5,12 @@ import telebot
 from config import validate_settings
 from logging_config import setup_logging
 from rag import ask
+from sessions import (
+    add_assistant_message,
+    add_user_message,
+    clear_session,
+    rollback_last_user_message,
+)
 
 settings = validate_settings()
 setup_logging(level=settings.log_level, json_format=settings.log_json)
@@ -23,13 +29,22 @@ def start(message):
     bot.send_message(
         chat_id,
         "Здравствуйте! Я помощник по испанским ВНЖ.\n"
-        "Напишите вопрос — отвечу по нашей базе знаний.",
+        "Напишите вопрос — отвечу по нашей базе знаний.\n\n"
+        "Команда /reset — начать диалог заново.",
     )
+
+
+@bot.message_handler(commands=["reset"])
+def reset(message):
+    chat_id = message.chat.id
+    clear_session(chat_id)
+    bot.send_message(chat_id, "Диалог сброшен. Можете задать новый вопрос.")
 
 
 @bot.message_handler(content_types=["text"])
 def handle_text(message):
     chat_id = message.chat.id
+    history = add_user_message(chat_id, message.text)
 
     logger.info(
         "user message",
@@ -37,12 +52,14 @@ def handle_text(message):
             "event": "user_message",
             "chat_id": chat_id,
             "text_length": len(message.text),
+            "history_messages": len(history),
         },
     )
 
     bot.send_chat_action(chat_id, "typing")
     try:
-        answer = ask(message.text, chat_id=chat_id)
+        answer = ask(message.text, history=history, chat_id=chat_id)
+        add_assistant_message(chat_id, answer)
         bot.send_message(chat_id, answer)
         logger.info(
             "assistant reply sent",
@@ -53,6 +70,7 @@ def handle_text(message):
             },
         )
     except Exception:
+        rollback_last_user_message(chat_id)
         bot.send_message(
             chat_id,
             "Прошу прощения, произошла техническая ошибка! "

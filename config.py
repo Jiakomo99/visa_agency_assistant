@@ -23,6 +23,7 @@ class Settings:
     yandex_folder: str
     yandex_model: str
     yandex_vector_store_id: str | None
+    session_ttl_minutes: int
     log_level: str
     log_json: bool
 
@@ -51,12 +52,21 @@ def load_settings() -> Settings:
     log_json_raw = (os.getenv("LOG_JSON") or "true").strip().lower()
     log_json = log_json_raw in ("1", "true", "yes", "on")
 
+    ttl_raw = (os.getenv("SESSION_TTL_MINUTES") or "60").strip()
+    try:
+        session_ttl_minutes = int(ttl_raw)
+    except ValueError as exc:
+        raise ConfigError("SESSION_TTL_MINUTES must be an integer") from exc
+    if session_ttl_minutes < 1:
+        raise ConfigError("SESSION_TTL_MINUTES must be at least 1")
+
     return Settings(
         telegram_api_key=_require("TELEGRAM_API_KEY"),
         yandex_api_key=_require("YANDEX_CLOUD_API_KEY"),
         yandex_folder=_require("YANDEX_CLOUD_FOLDER"),
         yandex_model=_require("YANDEX_CLOUD_MODEL"),
         yandex_vector_store_id=(os.getenv("YANDEX_VECTOR_STORE_ID") or "").strip() or None,
+        session_ttl_minutes=session_ttl_minutes,
         log_level=log_level,
         log_json=log_json,
     )
