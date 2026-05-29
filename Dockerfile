@@ -10,7 +10,7 @@ ENV PYTHONUNBUFFERED=1 \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY config.py logging_config.py db.py rag.py telegram_bot.py ./
+COPY config.py db.py logging_config.py rag.py telegram_bot.py ./
 COPY documents/ documents/
 
 RUN mkdir -p data
