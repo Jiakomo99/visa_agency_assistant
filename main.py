@@ -9,7 +9,6 @@ setup_logging(level=settings.log_level, json_format=settings.log_json)
 logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
-    conversation: list[dict[str, str]] = []
     logger.info("cli started", extra={"event": "cli_start"})
 
     while True:
@@ -17,7 +16,5 @@ if __name__ == "__main__":
         if user_input.lower() == "exit":
             break
 
-        conversation.append({"role": "user", "content": user_input})
-        answer, _ = ask(user_input, history=conversation)
-        conversation.append({"role": "assistant", "content": answer})
+        answer = ask(user_input)
         print("Ответ ассистента:", answer)

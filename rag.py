@@ -2,26 +2,28 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Optional
+from pathlib import Path
 
 from openai import OpenAI
 
 from config import get_settings
 
-# Each item: {"role": "user"|"assistant", "content": str}
-Message = dict[str, str]
-
 logger = logging.getLogger(__name__)
 
-INSTRUCTIONS = """Ты цифровой помощник иммиграционного бюро. Компания помогает в оформлении испанских вих.
-Ты должен общаться с клиентами, при этом быть:
-- вежливым
-- демонстрировать готовность помочь
-Ты должен давать ответы опираясь на базу знаний с вопросами и ответами.
-"""
+_SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent / "system_prompt.txt"
+_instructions: str | None = None
 
 _client: OpenAI | None = None
 _vector_store_id: str | None = None
+
+
+def _get_instructions() -> str:
+    global _instructions
+    if _instructions is None:
+        _instructions = _SYSTEM_PROMPT_PATH.read_text(encoding="utf-8").strip()
+        if not _instructions:
+            raise RuntimeError(f"System prompt file is empty: {_SYSTEM_PROMPT_PATH}")
+    return _instructions
 
 
 def _get_client() -> OpenAI:
@@ -114,50 +116,31 @@ def extract_text(response) -> str:
     return "\n".join(parts) if parts else str(output)
 
 
-def ask(
-    user_input: str,
-    previous_id: Optional[str] = None,
-    *,
-    history: Optional[list[Message]] = None,
-    chat_id: int | None = None,
-) -> tuple[str, str]:
-    """Send a question to the RAG model. Returns (answer_text, response_id).
+def strip_markdown_bold(text: str) -> str:
+    """Remove ** markers so Telegram shows plain text, not raw markdown."""
+    return text.replace("**", "")
 
-    Pass `history` for multi-turn dialogue (recommended). The list must end with
-    the latest user message. When `history` is set, `previous_id` is ignored.
-    """
+
+def ask(user_input: str, *, chat_id: int | None = None) -> str:
+    """Send a question to the RAG model and return the answer text."""
     settings = get_settings()
     store_id = ensure_vector_store()
     client = _get_client()
-
-    if history is not None:
-        api_input: str | list[Message] = history
-        chain_previous_id = None
-        history_len = len(history)
-    else:
-        api_input = [{"role": "user", "content": user_input}]
-        chain_previous_id = previous_id
-        history_len = 1
 
     started = time.perf_counter()
     try:
         response = client.responses.create(
             model=settings.yandex_model,
-            instructions=INSTRUCTIONS,
+            instructions=_get_instructions(),
             tools=[{"type": "retrieval", "vector_store_id": store_id}],
-            input=api_input,
-            previous_response_id=chain_previous_id,
+            input=[{"role": "user", "content": user_input}],
             temperature=0.4,
             max_output_tokens=1000,
         )
     except Exception:
         logger.exception(
             "yandex api request failed",
-            extra={
-                "event": "rag_request_failed",
-                "chat_id": chat_id,
-                "history_messages": history_len,
-            },
+            extra={"event": "rag_request_failed", "chat_id": chat_id},
         )
         raise
 
@@ -167,9 +150,8 @@ def ask(
         extra={
             "event": "rag_request_ok",
             "chat_id": chat_id,
-            "history_messages": history_len,
             "duration_ms": duration_ms,
             "response_id": response.id,
         },
     )
-    return extract_text(response), response.id
+    return strip_markdown_bold(extract_text(response))

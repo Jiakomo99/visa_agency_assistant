@@ -23,7 +23,6 @@ class Settings:
     yandex_folder: str
     yandex_model: str
     yandex_vector_store_id: str | None
-    conversations_db: str
     log_level: str
     log_json: bool
 
@@ -58,7 +57,6 @@ def load_settings() -> Settings:
         yandex_folder=_require("YANDEX_CLOUD_FOLDER"),
         yandex_model=_require("YANDEX_CLOUD_MODEL"),
         yandex_vector_store_id=(os.getenv("YANDEX_VECTOR_STORE_ID") or "").strip() or None,
-        conversations_db=(os.getenv("CONVERSATIONS_DB") or "data/conversations.db").strip(),
         log_level=log_level,
         log_json=log_json,
     )
